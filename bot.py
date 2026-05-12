@@ -1,9 +1,10 @@
+import os
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from openai import OpenAI
 
 TELEGRAM_TOKEN = "8675206328:AAHfyiHA0Q1x-Z_scFhr5cwpHRUwWB5vTgk"
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
