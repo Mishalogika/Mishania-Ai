@@ -54,7 +54,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     thinking_msg = await update.message.reply_text("🧠 Думаю...")
 
     response = client.chat.completions.create(
-        model="nvidia/nemotron-3-super-120b-a12b:free",
+        model="meta-llama/llama-3.3-70b-instruct:free",
         messages=user_histories[user_id]
     )
 
