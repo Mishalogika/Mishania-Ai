@@ -165,7 +165,7 @@ async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Использование: /weather Одесса")
             return
         city = " ".join(context.args)
-        url = f"https://wttr.in/{city}?format=3&lang=ru"
+        url = f"https://wttr.in/{city}?format=3&lang=ru&m"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             await update.message.reply_text(f"🌤 {response.text}")
