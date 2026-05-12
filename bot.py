@@ -3,7 +3,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, fil
 from openai import OpenAI
 
 TELEGRAM_TOKEN = "8675206328:AAHfyiHA0Q1x-Z_scFhr5cwpHRUwWB5vTgk"
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
