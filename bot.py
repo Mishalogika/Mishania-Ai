@@ -1,15 +1,12 @@
 import os
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
-from openai import OpenAI
+from groq import Groq
 
-TELEGRAM_TOKEN = "8675206328:AAHfyiHA0Q1x-Z_scFhr5cwpHRUwWB5vTgk"
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+GROQ_API_KEY = "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"
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-)
+client = Groq(api_key=GROQ_API_KEY)
 
 user_histories = {}
 
@@ -32,7 +29,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.message.chat.type
     bot_username = context.bot.username
 
-    # В группе отвечаем только если упомянули бота
     if chat_type in ["group", "supergroup"]:
         if f"@{bot_username}" not in user_text:
             return
@@ -55,7 +51,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     thinking_msg = await update.message.reply_text("🧠 Думаю...")
 
     response = client.chat.completions.create(
-        model="meta-llama/llama-3.3-70b-instruct:free",
+        model="llama-3.3-70b-versatile",
         messages=user_histories[user_id]
     )
 
@@ -105,15 +101,13 @@ async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await message.reply_text("❌ Не могу кикнуть — убедись что бот администратор!")
 
-
-
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 app.post_init = set_commands
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("clear", clear))
 app.add_handler(CommandHandler("members", members))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(CommandHandler("kick", kick))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 print("Миханя запущен...")
 app.run_polling()
