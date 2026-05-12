@@ -12,6 +12,7 @@ GROQ_API_KEY = "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"
 client = Groq(api_key=GROQ_API_KEY)
 user_histories = {}
 warned_users = {}
+user_checklists = {}
 
 async def set_commands(app):
     await app.bot.set_my_commands([
@@ -30,21 +31,31 @@ async def set_commands(app):
         BotCommand("unpin", "Открепить сообщение"),
         BotCommand("promote", "Сделать админом"),
         BotCommand("demote", "Снять с админа"),
+        BotCommand("slowmode", "Медленный режим /slowmode 10"),
+        BotCommand("purge", "Удалить N сообщений /purge 10"),
+        BotCommand("adminlist", "Список админов"),
+        BotCommand("everyone", "Упомянуть всех админов"),
         BotCommand("choose", "Выбрать случайного участника"),
         BotCommand("cube", "Рандомное число /cube 1 100"),
         BotCommand("weather", "Погода /weather Одесса"),
         BotCommand("roll", "Бросить кубик /roll или /roll 20"),
         BotCommand("flip", "Орёл или решка"),
         BotCommand("joke", "Случайная шутка"),
-        BotCommand("poll", "Создать опрос /poll Вопрос?Да|Нет"),
+        BotCommand("poll", "Опрос /poll Вопрос?Да|Нет"),
         BotCommand("info", "Инфо о пользователе"),
-        BotCommand("gay", "Узнать % гейства"),
         BotCommand("iq", "Измерить IQ"),
         BotCommand("rate", "Оценить рандомно"),
-        BotCommand("ship", "Шип двух людей"),
         BotCommand("slap", "Дать пощёчину"),
         BotCommand("hug", "Обнять"),
-        BotCommand("rps", "Камень ножницы бумага /rps камень"),
+        BotCommand("rps", "Камень ножницы бумага"),
+        BotCommand("music", "Найти песню /music название"),
+        BotCommand("checklist", "Чеклист /checklist создать|добавить|список|готово 1"),
+        BotCommand("8ball", "Магический шар /8ball вопрос"),
+        BotCommand("compliment", "Сделать комплимент"),
+        BotCommand("roast", "Подколоть пользователя"),
+        BotCommand("truth", "Вопрос правда или действие"),
+        BotCommand("dare", "Задание правда или действие"),
+        BotCommand("ascii", "Текст в ASCII /ascii привет"),
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -95,7 +106,7 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type not in ["group", "supergroup"]:
-        await update.message.reply_text("Эта команда только для групп!")
+        await update.message.reply_text("Только для групп!")
         return
     count = await context.bot.get_chat_member_count(chat.id)
     await update.message.reply_text(f"👥 В этой группе {count} участников")
@@ -104,8 +115,7 @@ def is_admin(status):
     return status in ["administrator", "creator"]
 
 async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
+    chat, message = update.effective_chat, update.message
     if chat.type not in ["group", "supergroup"]:
         await message.reply_text("Только для групп!")
         return
@@ -122,14 +132,10 @@ async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.unban_chat_member(chat.id, target.id)
         await message.reply_text(f"👢 {target.first_name} был кикнут!")
     except Exception:
-        await message.reply_text("❌ Не могу кикнуть — бот должен быть админом!")
+        await message.reply_text("❌ Бот должен быть админом!")
 
 async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
-    if chat.type not in ["group", "supergroup"]:
-        await message.reply_text("Только для групп!")
-        return
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
@@ -145,11 +151,7 @@ async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("❌ Не могу забанить!")
 
 async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
-    if chat.type not in ["group", "supergroup"]:
-        await message.reply_text("Только для групп!")
-        return
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
@@ -165,8 +167,7 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("❌ Не могу разбанить!")
 
 async def mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
+    chat, message = update.effective_chat, update.message
     if chat.type not in ["group", "supergroup"]:
         await message.reply_text("Только для групп!")
         return
@@ -196,12 +197,11 @@ async def mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await message.reply_text("❌ Формат: /mute 10m или /mute 2h или /mute 1d")
                 return
         except ValueError:
-            await message.reply_text("❌ Неверный формат! Пример: /mute 10m")
+            await message.reply_text("❌ Неверный формат!")
             return
 
     target = message.reply_to_message.from_user
     until_date = datetime.now(timezone.utc) + duration if duration else None
-
     try:
         await context.bot.restrict_chat_member(
             chat.id, target.id,
@@ -210,14 +210,10 @@ async def mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await message.reply_text(f"🔇 {target.first_name} замучен на {duration_text}!")
     except Exception:
-        await message.reply_text("❌ Не могу замутить — бот должен быть админом!")
+        await message.reply_text("❌ Бот должен быть админом!")
 
 async def unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
-    if chat.type not in ["group", "supergroup"]:
-        await message.reply_text("Только для групп!")
-        return
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
@@ -241,11 +237,7 @@ async def unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("❌ Не могу размутить!")
 
 async def warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
-    if chat.type not in ["group", "supergroup"]:
-        await message.reply_text("Только для групп!")
-        return
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
@@ -262,26 +254,24 @@ async def warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.ban_chat_member(chat.id, target.id)
             await context.bot.unban_chat_member(chat.id, target.id)
             warned_users[key] = 0
-            await message.reply_text(f"⚠️ {target.first_name} получил 3 предупреждения и был кикнут!")
+            await message.reply_text(f"⚠️ {target.first_name} получил 3 варна и был кикнут!")
         except Exception:
             await message.reply_text(f"⚠️ {target.first_name} имеет {count}/3 предупреждений!")
     else:
         await message.reply_text(f"⚠️ {target.first_name} получил предупреждение {count}/3!")
 
 async def warns(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
     message = update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
     target = message.reply_to_message.from_user
-    key = f"{chat.id}:{target.id}"
+    key = f"{update.effective_chat.id}:{target.id}"
     count = warned_users.get(key, 0)
     await message.reply_text(f"⚠️ У {target.first_name} {count}/3 предупреждений")
 
 async def clearwarns(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
@@ -290,13 +280,11 @@ async def clearwarns(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("❌ Только администраторы!")
         return
     target = message.reply_to_message.from_user
-    key = f"{chat.id}:{target.id}"
-    warned_users[key] = 0
-    await message.reply_text(f"✅ Предупреждения {target.first_name} сброшены!")
+    warned_users[f"{chat.id}:{target.id}"] = 0
+    await message.reply_text(f"✅ Варны {target.first_name} сброшены!")
 
 async def pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение которое хочешь закрепить!")
         return
@@ -311,8 +299,7 @@ async def pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("❌ Не могу закрепить!")
 
 async def unpin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
+    chat, message = update.effective_chat, update.message
     caller = await context.bot.get_chat_member(chat.id, message.from_user.id)
     if not is_admin(caller.status):
         await message.reply_text("❌ Только администраторы!")
@@ -324,14 +311,13 @@ async def unpin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("❌ Не могу открепить!")
 
 async def promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
     caller = await context.bot.get_chat_member(chat.id, message.from_user.id)
     if caller.status != "creator":
-        await message.reply_text("❌ Только создатель группы может назначать админов!")
+        await message.reply_text("❌ Только создатель группы!")
         return
     target = message.reply_to_message.from_user
     try:
@@ -344,11 +330,10 @@ async def promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await message.reply_text(f"⭐ {target.first_name} теперь администратор!")
     except Exception:
-        await message.reply_text("❌ Не могу назначить админа!")
+        await message.reply_text("❌ Не могу назначить!")
 
 async def demote(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    message = update.message
+    chat, message = update.effective_chat, update.message
     if not message.reply_to_message:
         await message.reply_text("Ответь на сообщение пользователя!")
         return
@@ -367,7 +352,68 @@ async def demote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await message.reply_text(f"⬇️ {target.first_name} снят с админа!")
     except Exception:
-        await message.reply_text("❌ Не могу снять с админа!")
+        await message.reply_text("❌ Не могу снять!")
+
+async def slowmode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat, message = update.effective_chat, update.message
+    caller = await context.bot.get_chat_member(chat.id, message.from_user.id)
+    if not is_admin(caller.status):
+        await message.reply_text("❌ Только администраторы!")
+        return
+    try:
+        seconds = int(context.args[0]) if context.args else 0
+        await context.bot.set_chat_slow_mode_delay(chat.id, seconds)
+        if seconds == 0:
+            await message.reply_text("✅ Медленный режим отключён!")
+        else:
+            await message.reply_text(f"🐌 Медленный режим: {seconds} секунд!")
+    except Exception:
+        await message.reply_text("❌ Использование: /slowmode 10 (0 чтобы отключить)")
+
+async def purge(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat, message = update.effective_chat, update.message
+    caller = await context.bot.get_chat_member(chat.id, message.from_user.id)
+    if not is_admin(caller.status):
+        await message.reply_text("❌ Только администраторы!")
+        return
+    try:
+        count = int(context.args[0]) if context.args else 5
+        count = min(count, 100)
+        deleted = 0
+        async for msg in context.bot.get_chat_history(chat.id, limit=count + 1):
+            try:
+                await context.bot.delete_message(chat.id, msg.message_id)
+                deleted += 1
+            except Exception:
+                pass
+        m = await message.reply_text(f"🗑 Удалено {deleted} сообщений!")
+        import asyncio
+        await asyncio.sleep(3)
+        await m.delete()
+    except Exception:
+        await message.reply_text("❌ Использование: /purge 10")
+
+async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("Только для групп!")
+        return
+    admins = await context.bot.get_chat_administrators(chat.id)
+    text = "👑 *Администраторы группы:*\n"
+    for a in admins:
+        name = a.user.first_name
+        role = "Создатель" if a.status == "creator" else "Админ"
+        text += f"• {name} — {role}\n"
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+async def everyone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("Только для групп!")
+        return
+    admins = await context.bot.get_chat_administrators(chat.id)
+    mentions = " ".join([f"[{a.user.first_name}](tg://user?id={a.user.id})" for a in admins if not a.user.is_bot])
+    await update.message.reply_text(f"📢 {mentions}", parse_mode="Markdown")
 
 async def choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -383,17 +429,16 @@ async def choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cube(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        args = context.args
-        if len(args) != 2:
+        if len(context.args) != 2:
             await update.message.reply_text("Использование: /cube 1 100")
             return
-        num1, num2 = int(args[0]), int(args[1])
+        num1, num2 = int(context.args[0]), int(context.args[1])
         if num1 > num2:
             num1, num2 = num2, num1
         result = random.randint(num1, num2)
         await update.message.reply_text(f"🎲 Случайное число от {num1} до {num2}: *{result}*", parse_mode="Markdown")
     except ValueError:
-        await update.message.reply_text("❌ Введи два числа! Например: /cube 1 100")
+        await update.message.reply_text("❌ Введи два числа!")
 
 async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -421,19 +466,18 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🎲 Бросаю кубик d{sides}... выпало *{result}*!", parse_mode="Markdown")
 
 async def flip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result = random.choice(["🦅 Орёл!", "🪙 Решка!"])
-    await update.message.reply_text(result)
+    await update.message.reply_text(random.choice(["🦅 Орёл!", "🪙 Решка!"]))
 
 async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     jokes = [
-        "Почему программисты путают Хэллоуин и Рождество? Потому что Oct 31 == Dec 25! 😄",
+        "Почему программисты путают Хэллоуин и Рождество? Oct 31 == Dec 25! 😄",
         "— Официант, у меня в супе муха! — Тише, а то все захотят! 😂",
-        "Моя жена сказала что я слишком много времени за компом. Я ответил: 'Это не баг это фича!' 😆",
+        "Моя жена: ты слишком много за компом. Я: это не баг — это фича! 😆",
         "— Как называется медведь без ушей? — Медвь! 🐻",
-        "Купил книгу 'Как не быть бедным'. Внутри один лист: 'Будь богатым!' 📚",
-        "Я сказал жене что она рисует брови слишком высоко. Она выглядела удивлённой. 😮",
-        "— Папа, почему солнце встаёт на востоке? — Сынок, не трогай это, оно хотя бы работает! ☀️",
-        "Программист пошёл в магазин. Жена сказала: 'Купи хлеб, и если будут яйца — возьми десяток'. Он вернулся с 10 буханками хлеба. 🍞",
+        "Купил книгу 'Как не быть бедным'. Внутри: 'Будь богатым!' 📚",
+        "Программист пошёл в магазин. Жена: купи хлеб, если будут яйца — возьми десяток. Вернулся с 10 хлебами. 🍞",
+        "— Почему Wi-Fi такой медленный? — Потому что провайдер тоже работает на удалёнке! 📡",
+        "Оптимист: стакан наполовину полон. Пессимист: наполовину пуст. Программист: стакан в два раза больше чем нужно! 🥛",
     ]
     await update.message.reply_text(random.choice(jokes))
 
@@ -467,25 +511,10 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
-async def gay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.reply_to_message.from_user if update.message.reply_to_message else update.effective_user
-    percent = random.randint(0, 100)
-    bar = "🌈" * (percent // 10) + "⬜" * (10 - percent // 10)
-    await update.message.reply_text(f"🏳️‍🌈 {user.first_name} гей на {percent}%\n{bar}")
-
 async def iq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.reply_to_message.from_user if update.message.reply_to_message else update.effective_user
     score = random.randint(0, 200)
-    if score < 70:
-        comment = "🥴 Ну... старайся!"
-    elif score < 100:
-        comment = "😐 Средненько"
-    elif score < 130:
-        comment = "🧠 Неплохо!"
-    elif score < 160:
-        comment = "🎓 Умник!"
-    else:
-        comment = "🚀 Гений!"
+    comment = "🥴 Ну... старайся!" if score < 70 else "😐 Средненько" if score < 100 else "🧠 Неплохо!" if score < 130 else "🎓 Умник!" if score < 160 else "🚀 Гений!"
     await update.message.reply_text(f"🧠 IQ {user.first_name}: {score}\n{comment}")
 
 async def rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -494,23 +523,19 @@ async def rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stars = "⭐" * score + "☆" * (10 - score)
     await update.message.reply_text(f"📊 {user.first_name} оценён на {score}/10\n{stars}")
 
-async def ship(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Ответь на сообщение второго человека!")
-        return
-    user1 = update.effective_user.first_name
-    user2 = update.message.reply_to_message.from_user.first_name
-    percent = random.randint(0, 100)
-    hearts = "❤️" * (percent // 10) + "🖤" * (10 - percent // 10)
-    await update.message.reply_text(f"💕 {user1} + {user2} = {percent}%\n{hearts}")
-
 async def slap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message:
         await update.message.reply_text("Ответь на сообщение!")
         return
     user1 = update.effective_user.first_name
     user2 = update.message.reply_to_message.from_user.first_name
-    await update.message.reply_text(f"👋 {user1} дал пощёчину {user2}! ШЛЁП!")
+    actions = [
+        f"👋 {user1} дал пощёчину {user2}! ШЛЁП!",
+        f"🐟 {user1} ударил {user2} рыбой!",
+        f"👠 {user1} треснул {user2} тапком!",
+        f"🍳 {user1} огрел {user2} сковородкой!",
+    ]
+    await update.message.reply_text(random.choice(actions))
 
 async def hug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message:
@@ -518,7 +543,7 @@ async def hug(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user1 = update.effective_user.first_name
     user2 = update.message.reply_to_message.from_user.first_name
-    await update.message.reply_text(f"🤗 {user1} обнял {user2}! Тепло и уютно~")
+    await update.message.reply_text(f"🤗 {user1} крепко обнял {user2}! Тепло и уютно~")
 
 async def rps(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choices = {"камень": "🪨", "ножницы": "✂️", "бумага": "📄"}
@@ -528,15 +553,176 @@ async def rps(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = context.args[0].lower()
     bot_choice = random.choice(list(choices.keys()))
     wins = {"камень": "ножницы", "ножницы": "бумага", "бумага": "камень"}
-    if player == bot_choice:
-        result = "🤝 Ничья!"
-    elif wins[player] == bot_choice:
-        result = "🎉 Ты победил!"
-    else:
-        result = "😈 Я победил!"
+    result = "🤝 Ничья!" if player == bot_choice else "🎉 Ты победил!" if wins[player] == bot_choice else "😈 Я победил!"
+    await update.message.reply_text(f"Ты: {choices[player]} {player}\nЯ: {choices[bot_choice]} {bot_choice}\n{result}")
+
+async def music(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Использование: /music название песни")
+        return
+    query = " ".join(context.args)
+    search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
     await update.message.reply_text(
-        f"Ты: {choices[player]} {player}\nЯ: {choices[bot_choice]} {bot_choice}\n{result}"
+        f"🎵 Ищу: *{query}*\n\n"
+        f"🔗 [Слушать на YouTube]({search_url})\n"
+        f"🎧 Также можешь найти на Spotify или Apple Music!",
+        parse_mode="Markdown"
     )
+
+async def checklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not context.args:
+        await update.message.reply_text(
+            "📋 Использование:\n"
+            "/checklist создать — новый список\n"
+            "/checklist добавить Задача — добавить пункт\n"
+            "/checklist список — показать список\n"
+            "/checklist готово 1 — отметить пункт\n"
+            "/checklist удалить 1 — удалить пункт"
+        )
+        return
+
+    cmd = context.args[0].lower()
+
+    if cmd == "создать":
+        user_checklists[user_id] = []
+        await update.message.reply_text("✅ Новый чеклист создан!")
+
+    elif cmd == "добавить":
+        if len(context.args) < 2:
+            await update.message.reply_text("Укажи задачу!")
+            return
+        task = " ".join(context.args[1:])
+        if user_id not in user_checklists:
+            user_checklists[user_id] = []
+        user_checklists[user_id].append({"task": task, "done": False})
+        await update.message.reply_text(f"➕ Добавлено: {task}")
+
+    elif cmd == "список":
+        if user_id not in user_checklists or not user_checklists[user_id]:
+            await update.message.reply_text("Список пустой! Добавь задачи через /checklist добавить")
+            return
+        text = "📋 *Твой чеклист:*\n"
+        for i, item in enumerate(user_checklists[user_id], 1):
+            mark = "✅" if item["done"] else "⬜"
+            text += f"{mark} {i}. {item['task']}\n"
+        await update.message.reply_text(text, parse_mode="Markdown")
+
+    elif cmd == "готово":
+        if len(context.args) < 2:
+            await update.message.reply_text("Укажи номер пункта!")
+            return
+        try:
+            idx = int(context.args[1]) - 1
+            user_checklists[user_id][idx]["done"] = True
+            await update.message.reply_text(f"✅ Пункт {idx+1} выполнен!")
+        except (IndexError, ValueError):
+            await update.message.reply_text("❌ Неверный номер пункта!")
+
+    elif cmd == "удалить":
+        if len(context.args) < 2:
+            await update.message.reply_text("Укажи номер пункта!")
+            return
+        try:
+            idx = int(context.args[1]) - 1
+            removed = user_checklists[user_id].pop(idx)
+            await update.message.reply_text(f"🗑 Удалено: {removed['task']}")
+        except (IndexError, ValueError):
+            await update.message.reply_text("❌ Неверный номер пункта!")
+
+async def eightball(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Использование: /8ball твой вопрос")
+        return
+    answers = [
+        "🎱 Бесспорно!", "🎱 Предрешено!", "🎱 Никаких сомнений!",
+        "🎱 Определённо да!", "🎱 Можешь быть уверен!", "🎱 Мне кажется да",
+        "🎱 Вероятнее всего", "🎱 Хороший знак", "🎱 Да",
+        "🎱 Пока неясно, попробуй ещё", "🎱 Спроси позже",
+        "🎱 Лучше не рассказывать", "🎱 Сейчас нельзя предсказать",
+        "🎱 Сосредоточься и спроси снова", "🎱 Не рассчитывай на это",
+        "🎱 Мой ответ — нет", "🎱 По моим данным нет",
+        "🎱 Перспективы не очень", "🎱 Весьма сомнительно", "🎱 Очень сомнительно",
+    ]
+    question = " ".join(context.args)
+    await update.message.reply_text(f"❓ {question}\n\n{random.choice(answers)}")
+
+async def compliment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.reply_to_message.from_user if update.message.reply_to_message else update.effective_user
+    compliments = [
+        f"✨ {user.first_name} — ты просто огонь! 🔥",
+        f"💫 {user.first_name} самый умный человек в этом чате!",
+        f"🌟 {user.first_name} излучает позитив и делает мир лучше!",
+        f"💪 {user.first_name} — настоящий легенда!",
+        f"🎯 {user.first_name} всегда попадает в точку!",
+        f"🦁 {user.first_name} смелый как лев!",
+        f"🧠 {user.first_name} умнее чем выглядит... а выглядит очень умно!",
+    ]
+    await update.message.reply_text(random.choice(compliments))
+
+async def roast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.reply_to_message.from_user if update.message.reply_to_message else update.effective_user
+    roasts = [
+        f"🔥 {user.first_name}, ты такой особенный... в плохом смысле!",
+        f"😂 {user.first_name} — живое доказательство что эволюция иногда идёт назад!",
+        f"💀 {user.first_name}, даже Google не знает ответа на вопрос зачем ты здесь!",
+        f"🤣 {user.first_name} такой скучный, что даже его тень уходит!",
+        f"😏 {user.first_name}, я видел лучшие идеи в инструкции к шампуню!",
+    ]
+    await update.message.reply_text(random.choice(roasts))
+
+async def truth(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    truths = [
+        "Какой твой самый большой страх?",
+        "Что ты никогда не расскажешь родителям?",
+        "Кого в этом чате ты считаешь самым странным?",
+        "Какая твоя самая неловкая история?",
+        "Ты когда-нибудь врал лучшему другу?",
+        "Что тебя больше всего раздражает в людях?",
+        "Какая твоя самая большая тайна?",
+        "Кого в этом чате ты бы позвал на свидание?",
+    ]
+    await update.message.reply_text(f"🤔 Правда: {random.choice(truths)}")
+
+async def dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    dares = [
+        "Напиши комплимент следующему человеку который напишет в чат!",
+        "Отправь голосовое сообщение и спой 10 секунд любой песни!",
+        "Напиши что-нибудь смешное капслоком!",
+        "Поменяй аватарку на любое смешное фото на 1 час!",
+        "Напиши признание в любви чату!",
+        "Отправь самое странное фото из галереи!",
+        "Напиши стих про кого-нибудь из чата!",
+    ]
+    await update.message.reply_text(f"😈 Действие: {random.choice(dares)}")
+
+async def ascii_art(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Использование: /ascii привет")
+        return
+    text = " ".join(context.args).upper()
+    letters = {
+        "A": ["█▀█", "█▀█", "▀ ▀"], "B": ["█▀▄", "█▀▄", "▀▀ "],
+        "C": ["█▀▀", "█  ", "▀▀▀"], "D": ["█▀▄", "█ █", "▀▀ "],
+        "E": ["█▀▀", "█▀▀", "▀▀▀"], "F": ["█▀▀", "█▀▀", "▀  "],
+        "G": ["█▀▀", "█ █", "▀▀█"], "H": ["█ █", "███", "█ █"],
+        "I": ["███", " █ ", "███"], "J": ["  █", "  █", "▀▀█"],
+        "K": ["█ █", "██ ", "█ █"], "L": ["█  ", "█  ", "███"],
+        "M": ["█▄█", "█ █", "█ █"], "N": ["█▄█", "█▀█", "█ █"],
+        "O": ["█▀█", "█ █", "▀▀▀"], "P": ["█▀█", "█▀▀", "▀  "],
+        "R": ["█▀█", "█▀▄", "▀ ▀"], "S": ["▀▀█", "▀▀▄", "▀▀▀"],
+        "T": ["███", " █ ", " █ "], "U": ["█ █", "█ █", "▀▀▀"],
+        "V": ["█ █", "█ █", " ▀ "], "W": ["█ █", "█ █", "█▄█"],
+        "X": ["█ █", " █ ", "█ █"], "Y": ["█ █", " █ ", " █ "],
+        "Z": ["▀▀█", " █ ", "█▀▀"], " ": ["   ", "   ", "   "],
+    }
+    rows = ["", "", ""]
+    for char in text[:10]:
+        if char in letters:
+            for i, row in enumerate(letters[char]):
+                rows[i] += row + " "
+    result = "\n".join(rows)
+    await update.message.reply_text(f"```\n{result}\n```", parse_mode="Markdown")
 
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 app.post_init = set_commands
@@ -555,6 +741,10 @@ app.add_handler(CommandHandler("pin", pin))
 app.add_handler(CommandHandler("unpin", unpin))
 app.add_handler(CommandHandler("promote", promote))
 app.add_handler(CommandHandler("demote", demote))
+app.add_handler(CommandHandler("slowmode", slowmode))
+app.add_handler(CommandHandler("purge", purge))
+app.add_handler(CommandHandler("adminlist", adminlist))
+app.add_handler(CommandHandler("everyone", everyone))
 app.add_handler(CommandHandler("choose", choose))
 app.add_handler(CommandHandler("cube", cube))
 app.add_handler(CommandHandler("weather", weather))
@@ -563,13 +753,19 @@ app.add_handler(CommandHandler("flip", flip))
 app.add_handler(CommandHandler("joke", joke))
 app.add_handler(CommandHandler("poll", poll))
 app.add_handler(CommandHandler("info", info))
-app.add_handler(CommandHandler("gay", gay))
 app.add_handler(CommandHandler("iq", iq))
 app.add_handler(CommandHandler("rate", rate))
-app.add_handler(CommandHandler("ship", ship))
 app.add_handler(CommandHandler("slap", slap))
 app.add_handler(CommandHandler("hug", hug))
 app.add_handler(CommandHandler("rps", rps))
+app.add_handler(CommandHandler("music", music))
+app.add_handler(CommandHandler("checklist", checklist))
+app.add_handler(CommandHandler("8ball", eightball))
+app.add_handler(CommandHandler("compliment", compliment))
+app.add_handler(CommandHandler("roast", roast))
+app.add_handler(CommandHandler("truth", truth))
+app.add_handler(CommandHandler("dare", dare))
+app.add_handler(CommandHandler("ascii", ascii_art))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 print("Миханя запущен...")
