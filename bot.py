@@ -13,6 +13,8 @@ client = Groq(api_key=GROQ_API_KEY)
 user_histories = {}
 warned_users = {}
 user_checklists = {}
+user_coins = {}
+last_daily = {}
 
 async def set_commands(app):
     await app.bot.set_my_commands([
@@ -32,7 +34,6 @@ async def set_commands(app):
         BotCommand("promote", "Сделать админом"),
         BotCommand("demote", "Снять с админа"),
         BotCommand("slowmode", "Медленный режим /slowmode 10"),
-        BotCommand("purge", "Удалить N сообщений /purge 10"),
         BotCommand("adminlist", "Список админов"),
         BotCommand("everyone", "Упомянуть всех админов"),
         BotCommand("choose", "Выбрать случайного участника"),
@@ -49,13 +50,21 @@ async def set_commands(app):
         BotCommand("hug", "Обнять"),
         BotCommand("rps", "Камень ножницы бумага"),
         BotCommand("music", "Найти песню /music название"),
-        BotCommand("checklist", "Чеклист /checklist создать|добавить|список|готово 1"),
+        BotCommand("checklist", "Чеклист"),
         BotCommand("8ball", "Магический шар /8ball вопрос"),
-        BotCommand("compliment", "Сделать комплимент"),
-        BotCommand("roast", "Подколоть пользователя"),
-        BotCommand("truth", "Вопрос правда или действие"),
-        BotCommand("dare", "Задание правда или действие"),
+        BotCommand("compliment", "Комплимент"),
+        BotCommand("roast", "Подколоть"),
+        BotCommand("truth", "Правда"),
+        BotCommand("dare", "Действие"),
         BotCommand("ascii", "Текст в ASCII /ascii привет"),
+        BotCommand("news", "Последние новости"),
+        BotCommand("currency", "Курс валют"),
+        BotCommand("daily", "Получить монеты"),
+        BotCommand("balance", "Мой баланс"),
+        BotCommand("top", "Топ богачей"),
+        BotCommand("transfer", "Перевести монеты"),
+        BotCommand("casino", "Казино /casino 10"),
+        BotCommand("shop", "Магазин команд"),
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -178,7 +187,6 @@ async def mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(caller.status):
         await message.reply_text("❌ Только администраторы!")
         return
-
     duration = None
     duration_text = "навсегда"
     if context.args:
@@ -199,7 +207,6 @@ async def mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await message.reply_text("❌ Неверный формат!")
             return
-
     target = message.reply_to_message.from_user
     until_date = datetime.now(timezone.utc) + duration if duration else None
     try:
@@ -368,30 +375,7 @@ async def slowmode(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await message.reply_text(f"🐌 Медленный режим: {seconds} секунд!")
     except Exception:
-        await message.reply_text("❌ Использование: /slowmode 10 (0 чтобы отключить)")
-
-async def purge(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat, message = update.effective_chat, update.message
-    caller = await context.bot.get_chat_member(chat.id, message.from_user.id)
-    if not is_admin(caller.status):
-        await message.reply_text("❌ Только администраторы!")
-        return
-    try:
-        count = int(context.args[0]) if context.args else 5
-        count = min(count, 100)
-        deleted = 0
-        async for msg in context.bot.get_chat_history(chat.id, limit=count + 1):
-            try:
-                await context.bot.delete_message(chat.id, msg.message_id)
-                deleted += 1
-            except Exception:
-                pass
-        m = await message.reply_text(f"🗑 Удалено {deleted} сообщений!")
-        import asyncio
-        await asyncio.sleep(3)
-        await m.delete()
-    except Exception:
-        await message.reply_text("❌ Использование: /purge 10")
+        await message.reply_text("❌ Использование: /slowmode 10")
 
 async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -401,9 +385,8 @@ async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admins = await context.bot.get_chat_administrators(chat.id)
     text = "👑 *Администраторы группы:*\n"
     for a in admins:
-        name = a.user.first_name
-        role = "Создатель" if a.status == "creator" else "Админ"
-        text += f"• {name} — {role}\n"
+        role = "Создатель 👑" if a.status == "creator" else "Админ ⭐"
+        text += f"• {a.user.first_name} — {role}\n"
     await update.message.reply_text(text, parse_mode="Markdown")
 
 async def everyone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -472,12 +455,11 @@ async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     jokes = [
         "Почему программисты путают Хэллоуин и Рождество? Oct 31 == Dec 25! 😄",
         "— Официант, у меня в супе муха! — Тише, а то все захотят! 😂",
-        "Моя жена: ты слишком много за компом. Я: это не баг — это фича! 😆",
-        "— Как называется медведь без ушей? — Медвь! 🐻",
-        "Купил книгу 'Как не быть бедным'. Внутри: 'Будь богатым!' 📚",
         "Программист пошёл в магазин. Жена: купи хлеб, если будут яйца — возьми десяток. Вернулся с 10 хлебами. 🍞",
-        "— Почему Wi-Fi такой медленный? — Потому что провайдер тоже работает на удалёнке! 📡",
+        "— Как называется медведь без ушей? — Медвь! 🐻",
         "Оптимист: стакан наполовину полон. Пессимист: наполовину пуст. Программист: стакан в два раза больше чем нужно! 🥛",
+        "— Почему Wi-Fi такой медленный? — Потому что провайдер тоже работает на удалёнке! 📡",
+        "Купил книгу 'Как не быть бедным'. Внутри: 'Будь богатым!' 📚",
     ]
     await update.message.reply_text(random.choice(jokes))
 
@@ -543,7 +525,7 @@ async def hug(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user1 = update.effective_user.first_name
     user2 = update.message.reply_to_message.from_user.first_name
-    await update.message.reply_text(f"🤗 {user1} крепко обнял {user2}! Тепло и уютно~")
+    await update.message.reply_text(f"🤗 {user1} крепко обнял {user2}!")
 
 async def rps(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choices = {"камень": "🪨", "ножницы": "✂️", "бумага": "📄"}
@@ -563,9 +545,7 @@ async def music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
     await update.message.reply_text(
-        f"🎵 Ищу: *{query}*\n\n"
-        f"🔗 [Слушать на YouTube]({search_url})\n"
-        f"🎧 Также можешь найти на Spotify или Apple Music!",
+        f"🎵 Ищу: *{query}*\n\n🔗 [Слушать на YouTube]({search_url})",
         parse_mode="Markdown"
     )
 
@@ -574,20 +554,17 @@ async def checklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "📋 Использование:\n"
-            "/checklist создать — новый список\n"
-            "/checklist добавить Задача — добавить пункт\n"
-            "/checklist список — показать список\n"
-            "/checklist готово 1 — отметить пункт\n"
-            "/checklist удалить 1 — удалить пункт"
+            "/checklist создать\n"
+            "/checklist добавить Задача\n"
+            "/checklist список\n"
+            "/checklist готово 1\n"
+            "/checklist удалить 1"
         )
         return
-
     cmd = context.args[0].lower()
-
     if cmd == "создать":
         user_checklists[user_id] = []
         await update.message.reply_text("✅ Новый чеклист создан!")
-
     elif cmd == "добавить":
         if len(context.args) < 2:
             await update.message.reply_text("Укажи задачу!")
@@ -597,52 +574,41 @@ async def checklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_checklists[user_id] = []
         user_checklists[user_id].append({"task": task, "done": False})
         await update.message.reply_text(f"➕ Добавлено: {task}")
-
     elif cmd == "список":
         if user_id not in user_checklists or not user_checklists[user_id]:
-            await update.message.reply_text("Список пустой! Добавь задачи через /checklist добавить")
+            await update.message.reply_text("Список пустой!")
             return
         text = "📋 *Твой чеклист:*\n"
         for i, item in enumerate(user_checklists[user_id], 1):
             mark = "✅" if item["done"] else "⬜"
             text += f"{mark} {i}. {item['task']}\n"
         await update.message.reply_text(text, parse_mode="Markdown")
-
     elif cmd == "готово":
-        if len(context.args) < 2:
-            await update.message.reply_text("Укажи номер пункта!")
-            return
         try:
             idx = int(context.args[1]) - 1
             user_checklists[user_id][idx]["done"] = True
             await update.message.reply_text(f"✅ Пункт {idx+1} выполнен!")
         except (IndexError, ValueError):
-            await update.message.reply_text("❌ Неверный номер пункта!")
-
+            await update.message.reply_text("❌ Неверный номер!")
     elif cmd == "удалить":
-        if len(context.args) < 2:
-            await update.message.reply_text("Укажи номер пункта!")
-            return
         try:
             idx = int(context.args[1]) - 1
             removed = user_checklists[user_id].pop(idx)
             await update.message.reply_text(f"🗑 Удалено: {removed['task']}")
         except (IndexError, ValueError):
-            await update.message.reply_text("❌ Неверный номер пункта!")
+            await update.message.reply_text("❌ Неверный номер!")
 
 async def eightball(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Использование: /8ball твой вопрос")
         return
     answers = [
-        "🎱 Бесспорно!", "🎱 Предрешено!", "🎱 Никаких сомнений!",
-        "🎱 Определённо да!", "🎱 Можешь быть уверен!", "🎱 Мне кажется да",
-        "🎱 Вероятнее всего", "🎱 Хороший знак", "🎱 Да",
-        "🎱 Пока неясно, попробуй ещё", "🎱 Спроси позже",
-        "🎱 Лучше не рассказывать", "🎱 Сейчас нельзя предсказать",
-        "🎱 Сосредоточься и спроси снова", "🎱 Не рассчитывай на это",
-        "🎱 Мой ответ — нет", "🎱 По моим данным нет",
-        "🎱 Перспективы не очень", "🎱 Весьма сомнительно", "🎱 Очень сомнительно",
+        "🎱 Бесспорно!", "🎱 Предрешено!", "🎱 Определённо да!",
+        "🎱 Можешь быть уверен!", "🎱 Мне кажется да", "🎱 Вероятнее всего",
+        "🎱 Хороший знак", "🎱 Да", "🎱 Пока неясно",
+        "🎱 Спроси позже", "🎱 Лучше не рассказывать",
+        "🎱 Не рассчитывай на это", "🎱 Мой ответ — нет",
+        "🎱 По моим данным нет", "🎱 Весьма сомнительно",
     ]
     question = " ".join(context.args)
     await update.message.reply_text(f"❓ {question}\n\n{random.choice(answers)}")
@@ -651,12 +617,10 @@ async def compliment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.reply_to_message.from_user if update.message.reply_to_message else update.effective_user
     compliments = [
         f"✨ {user.first_name} — ты просто огонь! 🔥",
-        f"💫 {user.first_name} самый умный человек в этом чате!",
-        f"🌟 {user.first_name} излучает позитив и делает мир лучше!",
-        f"💪 {user.first_name} — настоящий легенда!",
+        f"💫 {user.first_name} самый умный в этом чате!",
+        f"🌟 {user.first_name} делает мир лучше!",
+        f"💪 {user.first_name} — настоящая легенда!",
         f"🎯 {user.first_name} всегда попадает в точку!",
-        f"🦁 {user.first_name} смелый как лев!",
-        f"🧠 {user.first_name} умнее чем выглядит... а выглядит очень умно!",
     ]
     await update.message.reply_text(random.choice(compliments))
 
@@ -665,9 +629,8 @@ async def roast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     roasts = [
         f"🔥 {user.first_name}, ты такой особенный... в плохом смысле!",
         f"😂 {user.first_name} — живое доказательство что эволюция иногда идёт назад!",
-        f"💀 {user.first_name}, даже Google не знает ответа на вопрос зачем ты здесь!",
+        f"💀 {user.first_name}, даже Google не знает зачем ты здесь!",
         f"🤣 {user.first_name} такой скучный, что даже его тень уходит!",
-        f"😏 {user.first_name}, я видел лучшие идеи в инструкции к шампуню!",
     ]
     await update.message.reply_text(random.choice(roasts))
 
@@ -678,20 +641,16 @@ async def truth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Кого в этом чате ты считаешь самым странным?",
         "Какая твоя самая неловкая история?",
         "Ты когда-нибудь врал лучшему другу?",
-        "Что тебя больше всего раздражает в людях?",
-        "Какая твоя самая большая тайна?",
         "Кого в этом чате ты бы позвал на свидание?",
     ]
     await update.message.reply_text(f"🤔 Правда: {random.choice(truths)}")
 
 async def dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dares = [
-        "Напиши комплимент следующему человеку который напишет в чат!",
-        "Отправь голосовое сообщение и спой 10 секунд любой песни!",
+        "Напиши комплимент следующему кто напишет в чат!",
+        "Отправь голосовое и спой 10 секунд любой песни!",
         "Напиши что-нибудь смешное капслоком!",
-        "Поменяй аватарку на любое смешное фото на 1 час!",
         "Напиши признание в любви чату!",
-        "Отправь самое странное фото из галереи!",
         "Напиши стих про кого-нибудь из чата!",
     ]
     await update.message.reply_text(f"😈 Действие: {random.choice(dares)}")
@@ -700,29 +659,164 @@ async def ascii_art(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Использование: /ascii привет")
         return
-    text = " ".join(context.args).upper()
-    letters = {
-        "A": ["█▀█", "█▀█", "▀ ▀"], "B": ["█▀▄", "█▀▄", "▀▀ "],
-        "C": ["█▀▀", "█  ", "▀▀▀"], "D": ["█▀▄", "█ █", "▀▀ "],
-        "E": ["█▀▀", "█▀▀", "▀▀▀"], "F": ["█▀▀", "█▀▀", "▀  "],
-        "G": ["█▀▀", "█ █", "▀▀█"], "H": ["█ █", "███", "█ █"],
-        "I": ["███", " █ ", "███"], "J": ["  █", "  █", "▀▀█"],
-        "K": ["█ █", "██ ", "█ █"], "L": ["█  ", "█  ", "███"],
-        "M": ["█▄█", "█ █", "█ █"], "N": ["█▄█", "█▀█", "█ █"],
-        "O": ["█▀█", "█ █", "▀▀▀"], "P": ["█▀█", "█▀▀", "▀  "],
-        "R": ["█▀█", "█▀▄", "▀ ▀"], "S": ["▀▀█", "▀▀▄", "▀▀▀"],
-        "T": ["███", " █ ", " █ "], "U": ["█ █", "█ █", "▀▀▀"],
-        "V": ["█ █", "█ █", " ▀ "], "W": ["█ █", "█ █", "█▄█"],
-        "X": ["█ █", " █ ", "█ █"], "Y": ["█ █", " █ ", " █ "],
-        "Z": ["▀▀█", " █ ", "█▀▀"], " ": ["   ", "   ", "   "],
-    }
-    rows = ["", "", ""]
-    for char in text[:10]:
-        if char in letters:
-            for i, row in enumerate(letters[char]):
-                rows[i] += row + " "
-    result = "\n".join(rows)
-    await update.message.reply_text(f"```\n{result}\n```", parse_mode="Markdown")
+    text = " ".join(context.args).upper()[:8]
+    result = ""
+    for char in text:
+        result += char + " "
+    big = ""
+    for char in text:
+        big += f"[{char}]"
+    await update.message.reply_text(f"🔤 *{big}*", parse_mode="Markdown")
+
+async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        response = requests.get(
+            "https://news.google.com/rss?hl=ru&gl=RU&ceid=RU:ru",
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(response.content)
+        items = root.findall(".//item")[:5]
+        text = "📰 *Последние новости:*\n\n"
+        for item in items:
+            title = item.find("title").text
+            link = item.find("link").text
+            text += f"• [{title}]({link})\n\n"
+        await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+    except Exception:
+        await update.message.reply_text("❌ Не могу получить новости!")
+
+async def currency(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        response = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=5)
+        data = response.json()
+        rates = data["rates"]
+        uah = rates.get("UAH", "?")
+        eur = rates.get("EUR", "?")
+        rub = rates.get("RUB", "?")
+        gbp = rates.get("GBP", "?")
+        text = (
+            f"💱 *Курс валют (к USD):*\n\n"
+            f"🇺🇦 UAH: {uah:.2f} грн\n"
+            f"🇪🇺 EUR: {eur:.4f}\n"
+            f"🇷🇺 RUB: {rub:.2f}\n"
+            f"🇬🇧 GBP: {gbp:.4f}\n"
+        )
+        await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text("❌ Не могу получить курс валют!")
+
+async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    now = datetime.now(timezone.utc)
+    last = last_daily.get(user_id)
+    if last and (now - last).total_seconds() < 86400:
+        remaining = 86400 - (now - last).total_seconds()
+        hours = int(remaining // 3600)
+        minutes = int((remaining % 3600) // 60)
+        await update.message.reply_text(f"⏰ Следующая награда через {hours}ч {minutes}м!")
+        return
+    coins = random.randint(5, 20)
+    user_coins[user_id] = user_coins.get(user_id, 0) + coins
+    last_daily[user_id] = now
+    await update.message.reply_text(
+        f"🎁 Ты получил *{coins}* монет!\n"
+        f"💰 Баланс: *{user_coins[user_id]}* монет",
+        parse_mode="Markdown"
+    )
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.reply_to_message.from_user if update.message.reply_to_message else update.effective_user
+    coins = user_coins.get(user.id, 0)
+    await update.message.reply_text(f"💰 Баланс {user.first_name}: *{coins}* монет", parse_mode="Markdown")
+
+async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not user_coins:
+        await update.message.reply_text("Никто ещё не получал монеты!")
+        return
+    sorted_users = sorted(user_coins.items(), key=lambda x: x[1], reverse=True)[:10]
+    text = "🏆 *Топ богачей:*\n\n"
+    medals = ["🥇", "🥈", "🥉"] + ["4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    for i, (uid, coins) in enumerate(sorted_users):
+        text += f"{medals[i]} ID{uid}: *{coins}* монет\n"
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+async def transfer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message.reply_to_message:
+        await message.reply_text("Ответь на сообщение получателя! Пример: /transfer 50")
+        return
+    if not context.args:
+        await message.reply_text("Укажи сумму! Пример: /transfer 50")
+        return
+    try:
+        amount = int(context.args[0])
+        if amount <= 0:
+            await message.reply_text("❌ Сумма должна быть больше 0!")
+            return
+        sender_id = update.effective_user.id
+        receiver = message.reply_to_message.from_user
+        if user_coins.get(sender_id, 0) < amount:
+            await message.reply_text("❌ Недостаточно монет!")
+            return
+        user_coins[sender_id] = user_coins.get(sender_id, 0) - amount
+        user_coins[receiver.id] = user_coins.get(receiver.id, 0) + amount
+        await message.reply_text(
+            f"✅ Переведено *{amount}* монет для {receiver.first_name}!\n"
+            f"💰 Твой баланс: *{user_coins[sender_id]}* монет",
+            parse_mode="Markdown"
+        )
+    except ValueError:
+        await message.reply_text("❌ Укажи число!")
+
+async def casino(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not context.args:
+        await update.message.reply_text("Использование: /casino 10")
+        return
+    try:
+        bet = int(context.args[0])
+        if bet <= 0:
+            await update.message.reply_text("❌ Ставка должна быть больше 0!")
+            return
+        if user_coins.get(user_id, 0) < bet:
+            await update.message.reply_text(f"❌ Недостаточно монет! У тебя {user_coins.get(user_id, 0)} монет")
+            return
+        result = random.random()
+        if result < 0.45:
+            user_coins[user_id] = user_coins.get(user_id, 0) + bet
+            await update.message.reply_text(
+                f"🎰 Ты выиграл *{bet}* монет! 🎉\n💰 Баланс: *{user_coins[user_id]}* монет",
+                parse_mode="Markdown"
+            )
+        elif result < 0.9:
+            user_coins[user_id] = user_coins.get(user_id, 0) - bet
+            await update.message.reply_text(
+                f"🎰 Ты проиграл *{bet}* монет 😢\n💰 Баланс: *{user_coins[user_id]}* монет",
+                parse_mode="Markdown"
+            )
+        else:
+            jackpot = bet * 3
+            user_coins[user_id] = user_coins.get(user_id, 0) + jackpot
+            await update.message.reply_text(
+                f"🎰 ДЖЕКПОТ! Ты выиграл *{jackpot}* монет! 🤑\n💰 Баланс: *{user_coins[user_id]}* монет",
+                parse_mode="Markdown"
+            )
+    except ValueError:
+        await update.message.reply_text("❌ Укажи число!")
+
+async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🛒 *Магазин команд:*\n\n"
+        "За 100 монет можешь заказать кастомную команду у автора бота!\n\n"
+        "📝 Что можно заказать:\n"
+        "• Кастомное приветствие для группы\n"
+        "• Персональная команда с твоим именем\n"
+        "• Любая другая идея!\n\n"
+        "💬 Напиши автору бота и покажи свой баланс (/balance)",
+        parse_mode="Markdown"
+    )
 
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 app.post_init = set_commands
@@ -742,7 +836,6 @@ app.add_handler(CommandHandler("unpin", unpin))
 app.add_handler(CommandHandler("promote", promote))
 app.add_handler(CommandHandler("demote", demote))
 app.add_handler(CommandHandler("slowmode", slowmode))
-app.add_handler(CommandHandler("purge", purge))
 app.add_handler(CommandHandler("adminlist", adminlist))
 app.add_handler(CommandHandler("everyone", everyone))
 app.add_handler(CommandHandler("choose", choose))
@@ -766,6 +859,14 @@ app.add_handler(CommandHandler("roast", roast))
 app.add_handler(CommandHandler("truth", truth))
 app.add_handler(CommandHandler("dare", dare))
 app.add_handler(CommandHandler("ascii", ascii_art))
+app.add_handler(CommandHandler("news", news))
+app.add_handler(CommandHandler("currency", currency))
+app.add_handler(CommandHandler("daily", daily))
+app.add_handler(CommandHandler("balance", balance))
+app.add_handler(CommandHandler("top", top))
+app.add_handler(CommandHandler("transfer", transfer))
+app.add_handler(CommandHandler("casino", casino))
+app.add_handler(CommandHandler("shop", shop))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 print("Миханя запущен...")
