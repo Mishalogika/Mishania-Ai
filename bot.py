@@ -868,7 +868,7 @@ async def mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/mafia убить @имя — (ночью, мафия/маньяк)\n"
             "/mafia лечить @имя — (ночью, доктор)\n"
             "/mafia проверить @имя — (ночью, шериф)\n"
-            "/mafia блок @имя — (ночью, любовница)\n"
+            "/mafia блок @имя — (ночью, Гипнотизёр)\n"
             "/mafia статус — текущее состояние игры\n"
             "/mafia стоп — остановить игру",
             parse_mode="Markdown"
@@ -955,7 +955,7 @@ async def mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Мафия: /mafia убить @имя\n"
             f"• Доктор: /mafia лечить @имя\n"
             f"• Шериф: /mafia проверить @имя\n"
-            f"• Любовница: /mafia блок @имя",
+            f"• Гипнотизёр: /mafia блок @имя",
             parse_mode="Markdown"
         )
 
@@ -1091,8 +1091,8 @@ async def mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if game["phase"] != "ночь":
             await update.message.reply_text("❌ Блокировать можно только ночью!")
             return
-        if user.id not in game["alive"] or game["players"][user.id]["role"] != "любовница":
-            await update.message.reply_text("❌ Ты не любовница или уже мёртв!")
+        if user.id not in game["alive"] or game["players"][user.id]["role"] != "Гипнотизёр":
+            await update.message.reply_text("❌ Ты не Гипнотизёр или уже мёртв!")
             return
         if len(args) < 2:
             await update.message.reply_text("Укажи имя: /mafia блок Имя")
@@ -1201,7 +1201,7 @@ async def mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Мафия: /mafia убить Имя\n"
             f"• Доктор: /mafia лечить Имя\n"
             f"• Шериф: /mafia проверить Имя\n"
-            f"• Любовница: /mafia блок Имя\n\n"
+            f"• Гипнотизёр: /mafia блок Имя\n\n"
             f"Когда все сделали действия — /mafia день",
             parse_mode="Markdown"
         )
