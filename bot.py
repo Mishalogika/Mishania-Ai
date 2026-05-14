@@ -65,6 +65,7 @@ async def set_commands(app):
         BotCommand("transfer", "Перевести монеты"),
         BotCommand("casino", "Казино /casino 10"),
         BotCommand("shop", "Магазин команд"),
+        BotCommand("mafia", "Игра в мафию"),
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -819,6 +820,437 @@ async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+# ===== МАФИЯ =====
+mafia_games = {}
+
+ROLES_INFO = {
+    "мафия": "🔫 Ты *Мафия*! Ночью выбирай кого убить. Днём притворяйся мирным.",
+    "мирный": "👤 Ты *Мирный житель*! Днём голосуй за подозреваемых. Найди мафию!",
+    "шериф": "🔍 Ты *Шериф*! Ночью можешь проверить одного игрока — мафия он или нет.",
+    "доктор": "💊 Ты *Доктор*! Ночью можешь спасти одного игрока от убийства.",
+    "маньяк": "🔪 Ты *Маньяк*! Играешь один против всех. Ночью убиваешь. Победишь если останешься один.",
+    "любовница": "💋 Ты *Любовница*! Ночью можешь заблокировать одного игрока — он не сможет использовать способность.",
+}
+
+def get_roles(count):
+    if count < 4:
+        return None
+    roles = ["шериф", "доктор"]
+    mafia_count = max(1, count // 4)
+    roles += ["мафия"] * mafia_count
+    if count >= 7:
+        roles.append("маньяк")
+    if count >= 8:
+        roles.append("любовница")
+    while len(roles) < count:
+        roles.append("мирный")
+    random.shuffle(roles)
+    return roles
+
+async def mafia(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat.type not in ["group", "supergroup"]:
+        await update.message.reply_text("Мафия только для групп!")
+        return
+
+    chat_id = chat.id
+    args = context.args
+
+    if not args:
+        await update.message.reply_text(
+            "🎭 *Мафия — команды:*\n\n"
+            "/mafia начать — начать сбор игроков\n"
+            "/mafia войти — присоединиться к игре\n"
+            "/mafia старт — раздать роли и начать\n"
+            "/mafia день — начать голосование\n"
+            "/mafia голос @имя — проголосовать за игрока\n"
+            "/mafia убить @имя — (ночью, мафия/маньяк)\n"
+            "/mafia лечить @имя — (ночью, доктор)\n"
+            "/mafia проверить @имя — (ночью, шериф)\n"
+            "/mafia блок @имя — (ночью, любовница)\n"
+            "/mafia статус — текущее состояние игры\n"
+            "/mafia стоп — остановить игру",
+            parse_mode="Markdown"
+        )
+        return
+
+    cmd = args[0].lower()
+
+    if cmd == "начать":
+        if chat_id in mafia_games and mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Игра уже идёт!")
+            return
+        mafia_games[chat_id] = {
+            "active": False,
+            "phase": "сбор",
+            "players": {},
+            "alive": [],
+            "night_actions": {},
+            "votes": {},
+            "host": user.id,
+            "day": 0,
+        }
+        await update.message.reply_text(
+            f"🎭 *{user.first_name}* начинает игру в Мафию!\n\n"
+            f"Пишите /mafia войти чтобы присоединиться.\n"
+            f"Когда все готовы — /mafia старт (минимум 4 игрока)",
+            parse_mode="Markdown"
+        )
+
+    elif cmd == "войти":
+        if chat_id not in mafia_games:
+            await update.message.reply_text("❌ Сначала начни игру: /mafia начать")
+            return
+        game = mafia_games[chat_id]
+        if game["active"]:
+            await update.message.reply_text("❌ Игра уже началась!")
+            return
+        if user.id in game["players"]:
+            await update.message.reply_text(f"Ты уже в игре, {user.first_name}!")
+            return
+        game["players"][user.id] = {
+            "name": user.first_name,
+            "username": user.username,
+            "role": None,
+            "alive": True,
+        }
+        count = len(game["players"])
+        await update.message.reply_text(
+            f"✅ *{user.first_name}* вошёл в игру! Игроков: {count}",
+            parse_mode="Markdown"
+        )
+
+    elif cmd == "старт":
+        if chat_id not in mafia_games:
+            await update.message.reply_text("❌ Сначала начни игру: /mafia начать")
+            return
+        game = mafia_games[chat_id]
+        if game["active"]:
+            await update.message.reply_text("❌ Игра уже началась!")
+            return
+        if user.id != game["host"]:
+            await update.message.reply_text("❌ Только хост может начать игру!")
+            return
+        count = len(game["players"])
+        if count < 4:
+            await update.message.reply_text(f"❌ Нужно минимум 4 игрока! Сейчас: {count}")
+            return
+        roles = get_roles(count)
+        player_ids = list(game["players"].keys())
+        random.shuffle(player_ids)
+        for i, pid in enumerate(player_ids):
+            game["players"][pid]["role"] = roles[i]
+        game["alive"] = list(game["players"].keys())
+        game["active"] = True
+        game["phase"] = "ночь"
+        game["day"] = 1
+
+        players_text = "\n".join([f"• {p['name']}" for p in game["players"].values()])
+        await update.message.reply_text(
+            f"🎭 *Игра началась!*\n\n"
+            f"Игроки:\n{players_text}\n\n"
+            f"🌙 *Ночь {game['day']}*\n"
+            f"Роли разосланы в личку! Ночные действия:\n"
+            f"• Мафия: /mafia убить @имя\n"
+            f"• Доктор: /mafia лечить @имя\n"
+            f"• Шериф: /mafia проверить @имя\n"
+            f"• Любовница: /mafia блок @имя",
+            parse_mode="Markdown"
+        )
+
+        for pid, pdata in game["players"].items():
+            role = pdata["role"]
+            role_text = ROLES_INFO[role]
+            players_list = "\n".join([f"• {p['name']}" for p in game["players"].values()])
+            try:
+                await context.bot.send_message(
+                    pid,
+                    f"{role_text}\n\n"
+                    f"*Игроки в игре:*\n{players_list}\n\n"
+                    f"🌙 Сейчас ночь — используй свою способность в группе!",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+
+    elif cmd == "статус":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        alive_names = [game["players"][pid]["name"] for pid in game["alive"]]
+        dead_names = [p["name"] for pid, p in game["players"].items() if pid not in game["alive"]]
+        text = (
+            f"🎭 *Статус игры — {'🌙 Ночь' if game['phase'] == 'ночь' else '☀️ День'} {game['day']}*\n\n"
+            f"✅ *Живые ({len(alive_names)}):*\n" +
+            "\n".join([f"• {n}" for n in alive_names]) +
+            (f"\n\n💀 *Мёртвые:*\n" + "\n".join([f"• {n}" for n in dead_names]) if dead_names else "")
+        )
+        await update.message.reply_text(text, parse_mode="Markdown")
+
+    elif cmd == "убить":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if game["phase"] != "ночь":
+            await update.message.reply_text("❌ Убивать можно только ночью!")
+            return
+        if user.id not in game["alive"]:
+            await update.message.reply_text("❌ Ты уже мёртв!")
+            return
+        role = game["players"][user.id]["role"]
+        if role not in ["мафия", "маньяк"]:
+            await update.message.reply_text("❌ Это действие не для твоей роли!")
+            return
+        if len(args) < 2:
+            await update.message.reply_text("Укажи имя: /mafia убить Имя")
+            return
+        target_name = args[1].lstrip("@")
+        target_id = None
+        for pid, pdata in game["players"].items():
+            if pdata["name"].lower() == target_name.lower() or (pdata["username"] and pdata["username"].lower() == target_name.lower()):
+                target_id = pid
+                break
+        if not target_id:
+            await update.message.reply_text(f"❌ Игрок {target_name} не найден!")
+            return
+        if target_id not in game["alive"]:
+            await update.message.reply_text("❌ Этот игрок уже мёртв!")
+            return
+        game["night_actions"][f"убийство_{role}"] = target_id
+        await update.message.reply_text(f"✅ Ночное действие записано!")
+
+    elif cmd == "лечить":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if game["phase"] != "ночь":
+            await update.message.reply_text("❌ Лечить можно только ночью!")
+            return
+        if user.id not in game["alive"] or game["players"][user.id]["role"] != "доктор":
+            await update.message.reply_text("❌ Ты не доктор или уже мёртв!")
+            return
+        if len(args) < 2:
+            await update.message.reply_text("Укажи имя: /mafia лечить Имя")
+            return
+        target_name = args[1].lstrip("@")
+        target_id = None
+        for pid, pdata in game["players"].items():
+            if pdata["name"].lower() == target_name.lower() or (pdata["username"] and pdata["username"].lower() == target_name.lower()):
+                target_id = pid
+                break
+        if not target_id:
+            await update.message.reply_text(f"❌ Игрок {target_name} не найден!")
+            return
+        game["night_actions"]["лечение"] = target_id
+        await update.message.reply_text("✅ Ночное действие записано!")
+
+    elif cmd == "проверить":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if game["phase"] != "ночь":
+            await update.message.reply_text("❌ Проверять можно только ночью!")
+            return
+        if user.id not in game["alive"] or game["players"][user.id]["role"] != "шериф":
+            await update.message.reply_text("❌ Ты не шериф или уже мёртв!")
+            return
+        if len(args) < 2:
+            await update.message.reply_text("Укажи имя: /mafia проверить Имя")
+            return
+        target_name = args[1].lstrip("@")
+        target_id = None
+        for pid, pdata in game["players"].items():
+            if pdata["name"].lower() == target_name.lower() or (pdata["username"] and pdata["username"].lower() == target_name.lower()):
+                target_id = pid
+                break
+        if not target_id:
+            await update.message.reply_text(f"❌ Игрок {target_name} не найден!")
+            return
+        role = game["players"][target_id]["role"]
+        is_bad = role in ["мафия", "маньяк"]
+        result = "🔴 МАФИЯ/МАНЬЯК" if is_bad else "🟢 Мирный"
+        try:
+            await context.bot.send_message(
+                user.id,
+                f"🔍 Результат проверки *{game['players'][target_id]['name']}*: {result}",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await update.message.reply_text("✅ Результат отправлен в личку!")
+
+    elif cmd == "блок":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if game["phase"] != "ночь":
+            await update.message.reply_text("❌ Блокировать можно только ночью!")
+            return
+        if user.id not in game["alive"] or game["players"][user.id]["role"] != "любовница":
+            await update.message.reply_text("❌ Ты не любовница или уже мёртв!")
+            return
+        if len(args) < 2:
+            await update.message.reply_text("Укажи имя: /mafia блок Имя")
+            return
+        target_name = args[1].lstrip("@")
+        target_id = None
+        for pid, pdata in game["players"].items():
+            if pdata["name"].lower() == target_name.lower() or (pdata["username"] and pdata["username"].lower() == target_name.lower()):
+                target_id = pid
+                break
+        if not target_id:
+            await update.message.reply_text(f"❌ Игрок {target_name} не найден!")
+            return
+        game["night_actions"]["блок"] = target_id
+        await update.message.reply_text("✅ Ночное действие записано!")
+
+    elif cmd == "день":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if user.id != game["host"]:
+            await update.message.reply_text("❌ Только хост может переключать фазы!")
+            return
+        if game["phase"] != "ночь":
+            await update.message.reply_text("❌ Сейчас уже день!")
+            return
+
+        actions = game["night_actions"]
+        blocked = actions.get("блок")
+        kill_target = actions.get("убийство_мафия") or actions.get("убийство_маньяк")
+        heal_target = actions.get("лечение")
+        killed_role = None
+
+        result_text = f"☀️ *День {game['day']} наступил!*\n\n"
+
+        if kill_target:
+            if blocked and kill_target == blocked:
+                result_text += "🛡 Убийца был заблокирован — никто не погиб!\n"
+            elif heal_target and heal_target == kill_target:
+                result_text += f"💊 *{game['players'][kill_target]['name']}* был атакован, но доктор его спас!\n"
+            else:
+                if kill_target in game["alive"]:
+                    killed_role = game["players"][kill_target]["role"]
+                    game["alive"].remove(kill_target)
+                    result_text += f"💀 *{game['players'][kill_target]['name']}* был убит ночью! Роль: {killed_role}\n"
+        else:
+            result_text += "😴 Ночь прошла спокойно — никто не погиб!\n"
+
+        game["night_actions"] = {}
+        game["votes"] = {}
+        game["phase"] = "день"
+
+        # Проверяем победу
+        alive_roles = [game["players"][pid]["role"] for pid in game["alive"]]
+        mafia_count = alive_roles.count("мафия")
+        peaceful_count = len([r for r in alive_roles if r not in ["мафия", "маньяк"]])
+        maniac_alive = "маньяк" in alive_roles
+
+        if mafia_count == 0 and not maniac_alive:
+            result_text += "\n🎉 *МИРНЫЕ ПОБЕДИЛИ!* Мафия уничтожена!"
+            game["active"] = False
+        elif mafia_count >= peaceful_count and not maniac_alive:
+            result_text += "\n🔫 *МАФИЯ ПОБЕДИЛА!* Мирные в меньшинстве!"
+            game["active"] = False
+        elif maniac_alive and len(game["alive"]) <= 2:
+            result_text += "\n🔪 *МАНЬЯК ПОБЕДИЛ!*"
+            game["active"] = False
+        else:
+            result_text += f"\n👥 Живых осталось: {len(game['alive'])}\n"
+            result_text += "Голосуйте: /mafia голос Имя\nХост завершает день: /mafia ночь"
+
+        await update.message.reply_text(result_text, parse_mode="Markdown")
+
+    elif cmd == "ночь":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if user.id != game["host"]:
+            await update.message.reply_text("❌ Только хост!")
+            return
+
+        # Считаем голоса
+        if game["votes"]:
+            vote_count = {}
+            for voted in game["votes"].values():
+                vote_count[voted] = vote_count.get(voted, 0) + 1
+            max_votes = max(vote_count.values())
+            candidates = [pid for pid, v in vote_count.items() if v == max_votes]
+            eliminated = random.choice(candidates)
+            eliminated_role = game["players"][eliminated]["role"]
+            if eliminated in game["alive"]:
+                game["alive"].remove(eliminated)
+            vote_text = f"🗳 Город проголосовал! *{game['players'][eliminated]['name']}* казнён! Роль: {eliminated_role}\n\n"
+        else:
+            vote_text = "🗳 Никто не проголосовал — казни нет!\n\n"
+
+        game["phase"] = "ночь"
+        game["day"] += 1
+        game["votes"] = {}
+
+        await update.message.reply_text(
+            vote_text +
+            f"🌙 *Ночь {game['day']} наступила!*\n"
+            f"• Мафия: /mafia убить Имя\n"
+            f"• Доктор: /mafia лечить Имя\n"
+            f"• Шериф: /mafia проверить Имя\n"
+            f"• Любовница: /mafia блок Имя\n\n"
+            f"Когда все сделали действия — /mafia день",
+            parse_mode="Markdown"
+        )
+
+    elif cmd == "голос":
+        if chat_id not in mafia_games or not mafia_games[chat_id]["active"]:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if game["phase"] != "день":
+            await update.message.reply_text("❌ Голосовать можно только днём!")
+            return
+        if user.id not in game["alive"]:
+            await update.message.reply_text("❌ Мёртвые не голосуют!")
+            return
+        if len(args) < 2:
+            await update.message.reply_text("Укажи имя: /mafia голос Имя")
+            return
+        target_name = args[1].lstrip("@")
+        target_id = None
+        for pid, pdata in game["players"].items():
+            if pdata["name"].lower() == target_name.lower() or (pdata["username"] and pdata["username"].lower() == target_name.lower()):
+                target_id = pid
+                break
+        if not target_id or target_id not in game["alive"]:
+            await update.message.reply_text(f"❌ Игрок {target_name} не найден или мёртв!")
+            return
+        game["votes"][user.id] = target_id
+
+        vote_count = {}
+        for voted in game["votes"].values():
+            vote_count[voted] = vote_count.get(voted, 0) + 1
+        votes_text = "\n".join([f"• {game['players'][pid]['name']}: {v} голосов" for pid, v in vote_count.items()])
+        await update.message.reply_text(
+            f"🗳 *{user.first_name}* голосует против *{game['players'][target_id]['name']}*!\n\n"
+            f"*Текущие голоса:*\n{votes_text}",
+            parse_mode="Markdown"
+        )
+
+    elif cmd == "стоп":
+        if chat_id not in mafia_games:
+            await update.message.reply_text("❌ Нет активной игры!")
+            return
+        game = mafia_games[chat_id]
+        if user.id != game["host"]:
+            await update.message.reply_text("❌ Только хост может остановить игру!")
+            return
+        del mafia_games[chat_id]
+        await update.message.reply_text("🛑 Игра остановлена!")
 app.post_init = set_commands
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("clear", clear))
@@ -868,6 +1300,7 @@ app.add_handler(CommandHandler("transfer", transfer))
 app.add_handler(CommandHandler("casino", casino))
 app.add_handler(CommandHandler("shop", shop))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+app.add_handler(CommandHandler("mafia", mafia))
 
 print("Миханя запущен...")
 app.run_polling()
